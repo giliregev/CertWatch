@@ -1,0 +1,50 @@
+@echo off
+title CertWatch - Starting...
+
+echo.
+echo ==================================================
+echo    CertWatch - SSL/TLS Certificate Scanner
+echo ==================================================
+echo.
+
+REM Check if Node.js is installed
+where node >nul 2>&1
+
+if errorlevel 1 (
+    echo ERROR: Node.js is not installed or not in PATH.
+    echo.
+    echo Please install Node.js LTS from:
+    echo https://nodejs.org
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Node.js found:
+node -v
+echo.
+
+REM Install dependencies if needed
+if not exist "node_modules" (
+    echo Installing dependencies for the first time...
+    echo.
+    call npm install
+
+    if errorlevel 1 (
+        echo.
+        echo npm install failed.
+        pause
+        exit /b 1
+    )
+)
+
+echo.
+echo Starting CertWatch...
+echo Browser will open automatically.
+echo.
+echo To stop: close this window or press Ctrl+C
+echo.
+
+node server.js
+
+pause
