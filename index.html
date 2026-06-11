@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CertWatch — Certificate Scanner</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --panel:     #161b22;
+    --card:      #21262d;
+    --border:    #30363d;
+    --blue:      #388bfd;
+    --green:     #3fb950;
+    --yellow:    #d29922;
+    --red:       #f85149;
+    --orange:    #db6d28;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --radius:    8px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-family: 'Consolas', monospace;
+    font-size: 20px;
+    color: var(--blue);
+    letter-spacing: -0.5px;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  header .status-pill {
+    margin-left: auto;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(63,185,80,.15);
+    color: var(--green);
+    border: 1px solid rgba(63,185,80,.3);
+    transition: all .3s;
+  }
+  header .status-pill.scanning {
+    background: rgba(210,153,34,.15);
+    color: var(--yellow);
+    border-color: rgba(210,153,34,.3);
+  }
+  header .status-pill.done-ok {
+    background: rgba(63,185,80,.15);
+    color: var(--green);
+    border-color: rgba(63,185,80,.3);
+  }
+  header .status-pill.done-warn {
+    background: rgba(248,81,73,.15);
+    color: var(--red);
+    border-color: rgba(248,81,73,.3);
+  }
+
+  /* ── Layout ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left Panel ── */
+  .sidebar {
+    width: 290px;
+    min-width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .sidebar-inner { padding: 16px; }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin: 18px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title:first-child { margin-top: 0; }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="number"] {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--blue); }
+  input:disabled { opacity: .4; cursor: not-allowed; }
+  input[type="number"] { width: 100px; }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-row input[type="checkbox"] {
+    width: 15px; height: 15px;
+    accent-color: var(--blue);
+    cursor: pointer;
+  }
+  .checkbox-row span { font-size: 13px; color: var(--text); }
+
+  .threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .threshold-row .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .threshold-row label { margin: 0; flex: 1; }
+  .threshold-row input[type="number"] { width: 80px; }
+
+  /* ── Buttons ── */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    margin-top: 8px;
+  }
+  .btn:hover:not(:disabled) { opacity: .88; }
+  .btn:active:not(:disabled) { transform: scale(.98); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary  { background: var(--blue);  color: #fff; }
+  .btn-danger   { background: var(--card);  color: var(--red);   border: 1px solid var(--border); }
+  .btn-secondary{ background: var(--card);  color: var(--text);  border: 1px solid var(--border); }
+
+  /* ── Progress ── */
+  .progress-wrap { margin-top: 12px; }
+  .progress-bar-bg {
+    height: 6px;
+    background: var(--card);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 3px;
+    width: 0%;
+    transition: width .3s;
+  }
+  .progress-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    text-align: right;
+  }
+
+  /* ── Right content ── */
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    padding: 0 16px;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    padding: 12px 16px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
+    white-space: nowrap;
+  }
+  .tab-btn.active {
+    color: var(--text);
+    border-bottom-color: var(--blue);
+  }
+  .tab-btn:hover:not(.active) { color: var(--text); }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .filter-btn {
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .2s;
+    color: var(--muted);
+  }
+  .filter-btn.active, .filter-btn:hover { background: var(--border); color: var(--text); }
+  .filter-btn[data-filter="critical"] { color: var(--red); }
+  .filter-btn[data-filter="warning"]  { color: var(--yellow); }
+  .filter-btn[data-filter="notice"]   { color: var(--blue); }
+  .filter-btn[data-filter="ok"]       { color: var(--green); }
+
+  .search-input {
+    margin-left: auto;
+    width: 200px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 10px;
+    outline: none;
+  }
+  .search-input:focus { border-color: var(--blue); }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .tab-panel.active { display: flex; }
+
+  /* ── Table ── */
+  .table-wrap { flex: 1; overflow: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    background: var(--panel);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    padding: 10px 14px;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  thead th:hover { color: var(--text); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+  tbody tr:hover { background: rgba(255,255,255,.03); }
+  tbody td { padding: 9px 14px; font-family: 'Consolas', monospace; font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-critical { background: rgba(248,81,73,.15);  color: var(--red);    }
+  .badge-warning  { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .badge-notice   { background: rgba(56,139,253,.15); color: var(--blue);   }
+  .badge-ok       { background: rgba(63,185,80,.15);  color: var(--green);  }
+  .badge-expired  { background: rgba(139,148,158,.1); color: var(--muted);  }
+
+  .row-critical td:first-child { border-left: 3px solid var(--red);    }
+  .row-warning  td:first-child { border-left: 3px solid var(--yellow); }
+  .row-notice   td:first-child { border-left: 3px solid var(--blue);   }
+  .row-ok       td:first-child { border-left: 3px solid var(--green);  }
+  .row-expired  td:first-child { border-left: 3px solid var(--muted);  }
+
+  /* ── Summary ── */
+  #tab-summary {
+    padding: 24px;
+    overflow-y: auto;
+  }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .summary-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 16px;
+    text-align: center;
+  }
+  .summary-card .num {
+    font-family: 'Consolas', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .summary-card .lbl {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* ── Log ── */
+  #tab-log { overflow-y: auto; padding: 12px 16px; }
+  .log-line { font-family: 'Consolas', monospace; font-size: 12px; padding: 2px 0; }
+  .log-time { color: var(--muted); margin-right: 8px; }
+  .log-ok   { color: var(--green);  }
+  .log-warn { color: var(--yellow); }
+  .log-err  { color: var(--red);    }
+  .log-info { color: var(--blue);   }
+
+  /* ── Empty state ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--muted);
+    gap: 10px;
+  }
+  .empty-state .icon { font-size: 40px; opacity: .4; }
+  .empty-state p { font-size: 14px; }
+
+  /* ── Connection indicator ── */
+  .conn-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .conn-dot.disconnected { background: var(--red); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <h1>🔐 CertWatch</h1>
+  <span class="sub">SSL/TLS Certificate Scanner for Windows Networks</span>
+  <span class="status-pill" id="statusPill">
+    <span class="conn-dot" id="connDot"></span>Ready
+  </span>
+</header>
+
+<div class="main">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <div class="section-title">🌐 Network Scan</div>
+
+      <label for="ipRange">IP Range</label>
+      <input type="text" id="ipRange" placeholder="e.g. 192.168.1.1-254 or /24"
+             value="192.168.1.1-254" spellcheck="false">
+
+      <label for="timeout">Ping Timeout (seconds)</label>
+      <input type="number" id="timeout" value="1" min="1" max="30">
+
+      <label for="threads">Parallel Threads</label>
+      <input type="number" id="threads" value="30" min="1" max="100">
+
+      <div class="section-title">🔑 WinRM / Credentials</div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="useCurrentUser" checked>
+        <span>Use current logged-on user (Domain)</span>
+      </label>
+
+      <div id="credFields">
+        <label for="username">Username (DOMAIN\user)</label>
+        <input type="text" id="username" placeholder="DOMAIN\username" disabled spellcheck="false">
+
+        <label for="password">Password</label>
+        <input type="password" id="password" disabled>
+      </div>
+
+      <div class="section-title">⚠️ Alert Thresholds (days)</div>
+
+      <div class="threshold-row">
+        <div class="dot" style="background:var(--red)"></div>
+        <label>Critical</label>
+        <input type="number" id="critDays" value="30" min="1" max="365">
+      </div>
+      <div class="threshold-row">
+        <div class="dot" style="background:var(--yellow)"></div>
+        <label>Warning</label>
+        <input type="number" id="warnDays" value="60" min="1" max="365">
+      </div>
+      <div class="threshold-row">
+        <div class="dot" style="background:var(--blue)"></div>
+        <label>Notice</label>
+        <input type="number" id="noticeDays" value="90" min="1" max="365">
+      </div>
+
+      <div style="margin-top:18px;">
+        <button class="btn btn-primary" id="btnScan">▶ &nbsp;Start Scan</button>
+        <button class="btn btn-danger"  id="btnStop" disabled>⏹ &nbsp;Stop</button>
+        <button class="btn btn-secondary" id="btnExport">💾 &nbsp;Export CSV</button>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-label" id="progressLabel"></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="certificates">🔐 &nbsp;Certificates</button>
+      <button class="tab-btn"        data-tab="summary">📊 &nbsp;Summary</button>
+      <button class="tab-btn"        data-tab="log">📋 &nbsp;Scan Log</button>
+    </div>
+
+    <!-- CERTIFICATES TAB -->
+    <div class="tab-panel active" id="tab-certificates">
+      <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="critical">🔴 Critical</button>
+        <button class="filter-btn" data-filter="warning">🟡 Warning</button>
+        <button class="filter-btn" data-filter="notice">🔵 Notice</button>
+        <button class="filter-btn" data-filter="ok">✅ OK</button>
+        <input class="search-input" id="searchInput" type="text" placeholder="🔍  Search...">
+      </div>
+      <div class="table-wrap">
+        <table id="certsTable">
+          <thead>
+            <tr>
+              <th data-col="ip">IP Address</th>
+              <th data-col="hostname">Hostname</th>
+              <th data-col="subject">Subject</th>
+              <th data-col="issuer">Issuer</th>
+              <th data-col="notAfter">Expires On</th>
+              <th data-col="daysLeft">Days Left ↕</th>
+              <th data-col="status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="certsBody">
+            <tr><td colspan="7">
+              <div class="empty-state">
+                <div class="icon">🔍</div>
+                <p>No scan results yet. Configure the settings and click Start Scan.</p>
+              </div>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SUMMARY TAB -->
+    <div class="tab-panel" id="tab-summary">
+      <div id="summaryContent">
+        <div class="empty-state">
+          <div class="icon">📊</div>
+          <p>Run a scan to see the summary.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG TAB -->
+    <div class="tab-panel" id="tab-log" id="tab-log">
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────
+let allRows      = [];
+let activeFilter = 'all';
+let ws           = null;
+let scanning     = false;
+
+// ─── WebSocket ───────────────────────────────────────────
+function connect() {
+  ws = new WebSocket(`ws://localhost:3000`);
+
+  ws.onopen = () => {
+    document.getElementById('connDot').classList.remove('disconnected');
+    log('Connected to CertWatch server', 'info');
+  };
+
+  ws.onclose = () => {
+    document.getElementById('connDot').classList.add('disconnected');
+    log('Disconnected from server. Retrying in 3s...', 'warn');
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => {
+    log('Connection error', 'err');
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+}
+
+function send(data) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+// ─── Message Handler ─────────────────────────────────────
+function handleMessage(msg) {
+  switch (msg.type) {
+
+    case 'scan_started':
+      scanning = true;
+      allRows  = [];
+      document.getElementById('certsBody').innerHTML = '';
+      setStatus('Scanning...', 'scanning');
+      setProgress(0, msg.total);
+      log(`Scan started — ${msg.total} IP addresses to check`, 'info');
+      break;
+
+    case 'progress':
+      setProgress(msg.done, msg.total);
+      break;
+
+    case 'host_result':
+      setProgress(msg.done, msg.total);
+      if (msg.certs.length === 0 && !msg.winrmError) {
+        log(`ALIVE  ${msg.ip}  (${msg.hostname})  — no certificates found`, 'ok');
+        addRow({ ip: msg.ip, hostname: msg.hostname, subject: '(no certificates)',
+                 issuer: '', notAfter: '', daysLeft: '', status: '—', color: 'ok' });
+      } else if (msg.winrmError) {
+        log(`ALIVE  ${msg.ip}  (${msg.hostname})  — WinRM error: ${msg.winrmError.substring(0,80)}`, 'warn');
+        addRow({ ip: msg.ip, hostname: msg.hostname, subject: '(WinRM unavailable)',
+                 issuer: '', notAfter: '', daysLeft: '', status: '—', color: 'ok' });
+      } else {
+        log(`ALIVE  ${msg.ip}  (${msg.hostname})  — ${msg.certs.length} certificate(s)`, 'ok');
+        msg.certs.forEach(c => addRow({
+          ip: msg.ip, hostname: msg.hostname,
+          subject: c.Subject, issuer: c.Issuer,
+          notAfter: c.NotAfter, daysLeft: c.DaysLeft,
+          status: c.status, color: c.color
+        }));
+      }
+      break;
+
+    case 'scan_complete': {
+      scanning = false;
+      const crit = allRows.filter(r => r.color === 'critical').length;
+      const warn = allRows.filter(r => r.color === 'warning').length;
+      const alive = new Set(allRows.map(r => r.ip)).size;
+      const statusClass = crit > 0 ? 'done-warn' : 'done-ok';
+      setStatus(`Done  |  ${alive} servers  |  ${crit} critical  |  ${warn} warning`, statusClass);
+      log(`Scan complete — ${alive} servers alive  |  ${crit} critical  |  ${warn} warning`, 'ok');
+      document.getElementById('btnScan').disabled = false;
+      document.getElementById('btnStop').disabled = true;
+      setProgress(100, 100);
+      updateSummary();
+      break;
+    }
+
+    case 'scan_stopped':
+      scanning = false;
+      setStatus('Stopped', 'scanning');
+      log('Scan stopped by user', 'warn');
+      document.getElementById('btnScan').disabled = false;
+      document.getElementById('btnStop').disabled = true;
+      break;
+
+    case 'error':
+      log(`Error: ${msg.message}`, 'err');
+      scanning = false;
+      document.getElementById('btnScan').disabled = false;
+      document.getElementById('btnStop').disabled = true;
+      break;
+  }
+}
+
+// ─── Add row to table ────────────────────────────────────
+function addRow(row) {
+  allRows.push(row);
+  if (!rowMatchesFilter(row)) return;
+  const tbody = document.getElementById('certsBody');
+  tbody.insertAdjacentHTML('beforeend', buildRowHTML(row));
+}
+
+function buildRowHTML(row) {
+  const badge = `<span class="badge badge-${row.color}">${row.status}</span>`;
+  const days  = row.daysLeft !== '' ? row.daysLeft : '—';
+  return `<tr class="row-${row.color}" data-color="${row.color}">
+    <td title="${row.ip}">${row.ip}</td>
+    <td title="${row.hostname}">${row.hostname}</td>
+    <td title="${row.subject}">${trunc(row.subject, 50)}</td>
+    <td title="${row.issuer}">${trunc(row.issuer, 40)}</td>
+    <td>${row.notAfter}</td>
+    <td>${days}</td>
+    <td>${badge}</td>
+  </tr>`;
+}
+
+function trunc(s, n) {
+  return s && s.length > n ? s.substring(0, n) + '…' : (s || '');
+}
+
+function rowMatchesFilter(row) {
+  if (activeFilter !== 'all' && row.color !== activeFilter) return false;
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  if (search) {
+    const haystack = `${row.ip} ${row.hostname} ${row.subject} ${row.issuer} ${row.notAfter}`.toLowerCase();
+    if (!haystack.includes(search)) return false;
+  }
+  return true;
+}
+
+function applyFilter() {
+  const tbody = document.getElementById('certsBody');
+  tbody.innerHTML = '';
+  const filtered = allRows.filter(rowMatchesFilter);
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+      <div class="icon">🔍</div><p>No results match the current filter.</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(buildRowHTML).join('');
+}
+
+// ─── Summary ─────────────────────────────────────────────
+function updateSummary() {
+  const crit   = allRows.filter(r => r.color === 'critical').length;
+  const warn   = allRows.filter(r => r.color === 'warning').length;
+  const notice = allRows.filter(r => r.color === 'notice').length;
+  const ok     = allRows.filter(r => r.color === 'ok').length;
+  const exp    = allRows.filter(r => r.color === 'expired').length;
+  const hosts  = new Set(allRows.map(r => r.ip)).size;
+
+  document.getElementById('summaryContent').innerHTML = `
+    <div style="padding:24px">
+      <h2 style="color:var(--muted);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Scan Summary</h2>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:20px">${new Date().toLocaleString()}</p>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="num" style="color:var(--blue)">${hosts}</div>
+          <div class="lbl">Active Servers</div>
+        </div>
+        <div class="summary-card">
+          <div class="num" style="color:var(--muted)">${exp}</div>
+          <div class="lbl">Expired</div>
+        </div>
+        <div class="summary-card">
+          <div class="num" style="color:var(--red)">${crit}</div>
+          <div class="lbl">Critical (≤${document.getElementById('critDays').value}d)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num" style="color:var(--yellow)">${warn}</div>
+          <div class="lbl">Warning (≤${document.getElementById('warnDays').value}d)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num" style="color:var(--blue)">${notice}</div>
+          <div class="lbl">Notice (≤${document.getElementById('noticeDays').value}d)</div>
+        </div>
+        <div class="summary-card">
+          <div class="num" style="color:var(--green)">${ok}</div>
+          <div class="lbl">OK</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─── Log ─────────────────────────────────────────────────
+function log(msg, level = 'info') {
+  const panel = document.getElementById('tab-log');
+  const ts    = new Date().toLocaleTimeString();
+  const cls   = `log-${level}`;
+  panel.insertAdjacentHTML('beforeend',
+    `<div class="log-line"><span class="log-time">[${ts}]</span><span class="${cls}">${escHtml(msg)}</span></div>`);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── Progress ────────────────────────────────────────────
+function setProgress(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressFill').style.width  = pct + '%';
+  document.getElementById('progressLabel').textContent = total > 0 ? `${done} / ${total}  (${pct}%)` : '';
+}
+
+// ─── Status pill ─────────────────────────────────────────
+function setStatus(text, cls = '') {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'status-pill ' + cls;
+  const dot = document.getElementById('connDot');
+  pill.innerHTML = '';
+  pill.appendChild(dot);
+  pill.appendChild(document.createTextNode(' ' + text));
+}
+
+// ─── Tab switching ───────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── Filter buttons ──────────────────────────────────────
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    applyFilter();
+  });
+});
+
+document.getElementById('searchInput').addEventListener('input', applyFilter);
+
+// ─── Credentials toggle ──────────────────────────────────
+document.getElementById('useCurrentUser').addEventListener('change', function() {
+  const dis = this.checked;
+  document.getElementById('username').disabled = dis;
+  document.getElementById('password').disabled = dis;
+});
+
+// ─── Scan button ─────────────────────────────────────────
+document.getElementById('btnScan').addEventListener('click', () => {
+  const ipRange = document.getElementById('ipRange').value.trim();
+  if (!ipRange) { alert('Please enter an IP range.'); return; }
+
+  document.getElementById('btnScan').disabled = true;
+  document.getElementById('btnStop').disabled = false;
+
+  send({
+    type:           'start_scan',
+    ipRange,
+    timeoutSec:     parseInt(document.getElementById('timeout').value)   || 1,
+    threads:        parseInt(document.getElementById('threads').value)   || 30,
+    useCurrentUser: document.getElementById('useCurrentUser').checked,
+    username:       document.getElementById('username').value,
+    password:       document.getElementById('password').value,
+    critDays:       parseInt(document.getElementById('critDays').value)  || 30,
+    warnDays:       parseInt(document.getElementById('warnDays').value)  || 60,
+    noticeDays:     parseInt(document.getElementById('noticeDays').value)|| 90,
+  });
+});
+
+// ─── Stop button ─────────────────────────────────────────
+document.getElementById('btnStop').addEventListener('click', () => {
+  send({ type: 'stop_scan' });
+});
+
+// ─── Export CSV ──────────────────────────────────────────
+document.getElementById('btnExport').addEventListener('click', () => {
+  if (allRows.length === 0) { alert('No data to export.'); return; }
+  const headers = ['IP Address','Hostname','Subject','Issuer','Expires On','Days Left','Status'];
+  const rows    = allRows.map(r =>
+    [r.ip, r.hostname, r.subject, r.issuer, r.notAfter, r.daysLeft, r.status]
+      .map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')
+  );
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `CertWatch_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  log('CSV exported', 'ok');
+});
+
+// ─── Column sort ─────────────────────────────────────────
+let sortCol = 'daysLeft', sortAsc = true;
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (sortCol === col) sortAsc = !sortAsc; else { sortCol = col; sortAsc = true; }
+    allRows.sort((a, b) => {
+      let av = a[col] ?? '', bv = b[col] ?? '';
+      if (!isNaN(av) && !isNaN(bv)) { av = Number(av); bv = Number(bv); }
+      if (av < bv) return sortAsc ? -1 : 1;
+      if (av > bv) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    applyFilter();
+  });
+});
+
+// ─── Boot ────────────────────────────────────────────────
+connect();
+log('CertWatch ready — PowerShell Edition', 'info');
+log('Enter your IP range and click Start Scan', 'info');
+</script>
+</body>
+</html>
